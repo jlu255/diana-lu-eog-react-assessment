@@ -8,7 +8,24 @@ import FormControl from '@material-ui/core/FormControl';
 import ListItemText from '@material-ui/core/ListItemText';
 import Select from '@material-ui/core/Select';
 import Chip from '@material-ui/core/Chip';
-const { graphql, buildSchema } = require('graphql');
+import { Provider, createClient, useQuery, Client, dedupExchange, fetchExchange, subscriptionExchange } from 'urql';
+
+import { SubscriptionClient } from 'subscription-transport-ws';
+const subscriptionClient = new SubscriptionClient('https://react.eogresources.com/graphql', {
+  reconnect: true,
+  //   connectionParams: {
+  //     authToken: getToken(),
+  //   },
+});
+const client = createClient({
+  url: 'https://react.eogresources.com/graphql',
+});
+
+const query = `
+query{
+	getMetrics
+}
+`;
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -40,15 +57,13 @@ const MenuProps = {
   },
 };
 
-const metricses = [
-  'flareTemp',
-  'casingPressure',
-  'April Tucker',
-  'injValveOpen',
-  'oilTemp',
-  'tubingPressure',
-  'waterTemp',
-];
+export default () => {
+  return (
+    <Provider value={client}>
+      <Dropdown />
+    </Provider>
+  );
+};
 
 function getStyles(metrics: string, personMetrics: string[], theme: Theme) {
   return {
@@ -76,6 +91,13 @@ const Dropdown = () => {
     }
     setPersonMetrics(value);
   };
+
+  const [result] = useQuery({
+    query,
+  });
+  const { fetching, data, error } = result;
+  const metricses = !fetching ? data.getMetrics : null;
+
   return (
     <div>
       <FormControl className={classes.formControl}>
@@ -96,15 +118,14 @@ const Dropdown = () => {
           )}
           MenuProps={MenuProps}
         >
-          {metricses.map(matrics => (
-            <MenuItem key={matrics} value={matrics} style={getStyles(matrics, personMetrics, theme)}>
-              {matrics}
-            </MenuItem>
-          ))}
+          {metricses &&
+            metricses.map((metrics: any) => (
+              <MenuItem key={metrics} value={metrics} style={getStyles(metrics, personMetrics, theme)}>
+                {metrics}
+              </MenuItem>
+            ))}
         </Select>
       </FormControl>
     </div>
   );
 };
-
-export default Dropdown;
