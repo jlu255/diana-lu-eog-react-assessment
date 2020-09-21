@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { createStyles, makeStyles, useTheme, Theme } from '@material-ui/core/styles';
 import Input from '@material-ui/core/Input';
@@ -8,9 +8,10 @@ import FormControl from '@material-ui/core/FormControl';
 import ListItemText from '@material-ui/core/ListItemText';
 import Select from '@material-ui/core/Select';
 import Chip from '@material-ui/core/Chip';
-// import { client, metricses } from '../API/MetricsAPI';
-
 import { SubscriptionClient } from 'subscriptions-transport-ws';
+import { render } from 'react-dom';
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
 
 import {
   Provider,
@@ -22,6 +23,7 @@ import {
   fetchExchange,
   subscriptionExchange,
 } from 'urql';
+import { AnyARecord } from 'dns';
 
 const subscriptionClient = new SubscriptionClient('ws://react.eogresources.com/graphql', {
   reconnect: true,
@@ -40,12 +42,11 @@ const client = new Client({
   ],
 });
 
-const query = `
+const metricsQuery = `
 query{
 	getMetrics
 }
 `;
-
 const NEW_METRICS_SUBSCRIPTION = `
     subscription {
       newMeasurement {
@@ -57,6 +58,20 @@ const NEW_METRICS_SUBSCRIPTION = `
     }
 `;
 
+const getMultipleMeasurementsQuery = `
+query{
+    getMultipleMeasurements(input:[{metricName: "flareTemp", after:1600708142403 },{metricName:  "casingPressure", after:1600708142403},
+    {metricName:  "injValveOpen",after:1600708142403}, {metricName:  "oilTemp",after:1600708142403},{metricName:"tubingPressure",after:1600708142403},
+    {metricName:"waterTemp",after:1600708142403}]){
+      metric
+      measurements{
+        at
+        value
+        unit
+      }
+    } 
+}
+`;
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
     formControl: {
@@ -103,18 +118,28 @@ function getStyles(metrics: string, personMetrics: string[], theme: Theme) {
 }
 function GetMetrics() {
   const [result] = useQuery({
-    query,
+    query: metricsQuery,
   });
   const { fetching, data, error } = result;
   const metricses = !fetching ? data.getMetrics : null;
   return metricses;
 }
 
+function GetMultipleMeasurements() {
+  const [result] = useQuery({
+    query: getMultipleMeasurementsQuery,
+  });
+  const { fetching, data, error } = result;
+  // console.log(data);
+  // console.log(error);
+  const multipleMeasures = !fetching ? data.getMultipleMeasurements : null;
+  return multipleMeasures;
+}
+
 function GetUpdate() {
   const [update] = useSubscription({ query: NEW_METRICS_SUBSCRIPTION });
   const { fetching, data, error } = update;
   const newMeasurement = !data ? null : data.newMeasurement;
-  console.log(newMeasurement);
   return newMeasurement;
 }
 
@@ -123,24 +148,67 @@ const Dropdown = () => {
   const theme = useTheme();
   const [personMetrics, setPersonMetrics] = React.useState<string[]>([]);
 
+  const newMeasurements = React.useRef<any>([]);
+
   const handleChange = (event: React.ChangeEvent<{ value: unknown }>) => {
     setPersonMetrics(event.target.value as string[]);
   };
 
-  const handleChangeMultiple = (event: React.ChangeEvent<{ value: unknown }>) => {
-    const { options } = event.target as HTMLSelectElement;
-    const value: string[] = [];
-    for (let i = 0, l = options.length; i < l; i += 1) {
-      if (options[i].selected) {
-        value.push(options[i].value);
-      }
-    }
-    setPersonMetrics(value);
-  };
   const metricses = GetMetrics();
-  GetUpdate();
-  // const newMeasurement = GetUpdate();
-  // console.log(newMeasurement);
+  const newMeasurement = GetUpdate();
+  const multipleMeasures = GetMultipleMeasurements();
+
+  if (newMeasurement) {
+    // console.log(newMeasurement);
+    newMeasurements.current = [
+      ...newMeasurements.current.filter((m: any) => {
+        return m.metric !== newMeasurement.metric;
+      }),
+      newMeasurement,
+    ];
+    // console.log(newMeasurements.current);
+  }
+
+  const LineChart = () => {
+    const series = multipleMeasures
+      ? multipleMeasures
+          .filter((measurement: any) => {
+            const { metric } = measurement;
+
+            return personMetrics.includes(metric);
+          })
+          .map((measurement: any) => {
+            const { metric, measurements } = measurement;
+
+            return {
+              name: metric,
+              data: measurements.map((e: any) => {
+                const { value, at } = e;
+                return { x: at, y: value };
+              }),
+              turboThreshold: 5000,
+            };
+          })
+      : null;
+
+    const chartOptions: Highcharts.Options = {
+      xAxis: {
+        type: 'datetime',
+      },
+      chart: {
+        animation: false,
+      },
+      series,
+      plotOptions: {
+        series: {
+          animation: false,
+        },
+      },
+    };
+
+    return <HighchartsReact highcharts={Highcharts} options={chartOptions} />;
+  };
+
   return (
     <>
       <div>
@@ -172,7 +240,20 @@ const Dropdown = () => {
         </FormControl>
       </div>
       <div>
-        <h1>{personMetrics}</h1>
+        <div>
+          {newMeasurements.current
+            .filter((newMeasurement: any) => {
+              const { metric } = newMeasurement;
+              return personMetrics.includes(metric);
+            })
+            .map((newMeasurement: any) => {
+              const { metric, value } = newMeasurement;
+              return <p key={metric}>{`${metric}: ${value}`}</p>;
+            })}
+        </div>
+        <>
+          <LineChart />
+        </>
       </div>
     </>
   );
