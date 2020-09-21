@@ -8,23 +8,53 @@ import FormControl from '@material-ui/core/FormControl';
 import ListItemText from '@material-ui/core/ListItemText';
 import Select from '@material-ui/core/Select';
 import Chip from '@material-ui/core/Chip';
-import { Provider, createClient, useQuery, Client, dedupExchange, fetchExchange, subscriptionExchange } from 'urql';
+// import { client, metricses } from '../API/MetricsAPI';
 
-import { SubscriptionClient } from 'subscription-transport-ws';
-const subscriptionClient = new SubscriptionClient('https://react.eogresources.com/graphql', {
+import { SubscriptionClient } from 'subscriptions-transport-ws';
+
+import {
+  Provider,
+  createClient,
+  useQuery,
+  useSubscription,
+  Client,
+  dedupExchange,
+  fetchExchange,
+  subscriptionExchange,
+} from 'urql';
+
+const subscriptionClient = new SubscriptionClient('ws://react.eogresources.com/graphql', {
   reconnect: true,
-  //   connectionParams: {
-  //     authToken: getToken(),
-  //   },
+  connectionParams: {
+    // authToken: getToken(),
+  },
 });
-const client = createClient({
+const client = new Client({
   url: 'https://react.eogresources.com/graphql',
+  exchanges: [
+    dedupExchange,
+    fetchExchange,
+    subscriptionExchange({
+      forwardSubscription: operation => subscriptionClient.request(operation),
+    }),
+  ],
 });
 
 const query = `
 query{
 	getMetrics
 }
+`;
+
+const NEW_METRICS_SUBSCRIPTION = `
+    subscription {
+      newMeasurement {
+        value
+        at
+        metric
+        unit
+      }
+    }
 `;
 
 const useStyles = makeStyles((theme: Theme) =>
@@ -71,6 +101,22 @@ function getStyles(metrics: string, personMetrics: string[], theme: Theme) {
       personMetrics.indexOf(metrics) === -1 ? theme.typography.fontWeightRegular : theme.typography.fontWeightMedium,
   };
 }
+function GetMetrics() {
+  const [result] = useQuery({
+    query,
+  });
+  const { fetching, data, error } = result;
+  const metricses = !fetching ? data.getMetrics : null;
+  return metricses;
+}
+
+function GetUpdate() {
+  const [update] = useSubscription({ query: NEW_METRICS_SUBSCRIPTION });
+  const { fetching, data, error } = update;
+  const newMeasurement = !data ? null : data.newMeasurement;
+  console.log(newMeasurement);
+  return newMeasurement;
+}
 
 const Dropdown = () => {
   const classes = useStyles();
@@ -91,41 +137,43 @@ const Dropdown = () => {
     }
     setPersonMetrics(value);
   };
-
-  const [result] = useQuery({
-    query,
-  });
-  const { fetching, data, error } = result;
-  const metricses = !fetching ? data.getMetrics : null;
-
+  const metricses = GetMetrics();
+  GetUpdate();
+  // const newMeasurement = GetUpdate();
+  // console.log(newMeasurement);
   return (
-    <div>
-      <FormControl className={classes.formControl}>
-        <InputLabel id="demo-mutiple-chip-label">ShowTags</InputLabel>
-        <Select
-          labelId="demo-mutiple-chip-label"
-          id="demo-mutiple-chip"
-          multiple
-          value={personMetrics}
-          onChange={handleChange}
-          input={<Input id="select-multiple-chip" />}
-          renderValue={selected => (
-            <div className={classes.showTags}>
-              {(selected as string[]).map(value => (
-                <Chip key={value} label={value} className={classes.showTag} />
+    <>
+      <div>
+        <FormControl className={classes.formControl}>
+          <InputLabel id="demo-mutiple-chip-label">ShowTags</InputLabel>
+          <Select
+            labelId="demo-mutiple-chip-label"
+            id="demo-mutiple-chip"
+            multiple
+            value={personMetrics}
+            onChange={handleChange}
+            input={<Input id="select-multiple-chip" />}
+            renderValue={selected => (
+              <div className={classes.showTags}>
+                {(selected as string[]).map(value => (
+                  <Chip key={value} label={value} className={classes.showTag} />
+                ))}
+              </div>
+            )}
+            MenuProps={MenuProps}
+          >
+            {metricses &&
+              metricses.map((metrics: any) => (
+                <MenuItem key={metrics} value={metrics} style={getStyles(metrics, personMetrics, theme)}>
+                  {metrics}
+                </MenuItem>
               ))}
-            </div>
-          )}
-          MenuProps={MenuProps}
-        >
-          {metricses &&
-            metricses.map((metrics: any) => (
-              <MenuItem key={metrics} value={metrics} style={getStyles(metrics, personMetrics, theme)}>
-                {metrics}
-              </MenuItem>
-            ))}
-        </Select>
-      </FormControl>
-    </div>
+          </Select>
+        </FormControl>
+      </div>
+      <div>
+        <h1>{personMetrics}</h1>
+      </div>
+    </>
   );
 };
