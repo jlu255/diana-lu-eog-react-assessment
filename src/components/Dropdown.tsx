@@ -1,35 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import clsx from 'clsx';
 import { createStyles, makeStyles, useTheme, Theme } from '@material-ui/core/styles';
 import Input from '@material-ui/core/Input';
 import InputLabel from '@material-ui/core/InputLabel';
 import MenuItem from '@material-ui/core/MenuItem';
 import FormControl from '@material-ui/core/FormControl';
-import ListItemText from '@material-ui/core/ListItemText';
 import Select from '@material-ui/core/Select';
 import Chip from '@material-ui/core/Chip';
 import { SubscriptionClient } from 'subscriptions-transport-ws';
-import { render } from 'react-dom';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
-import {
-  Provider,
-  createClient,
-  useQuery,
-  useSubscription,
-  Client,
-  dedupExchange,
-  fetchExchange,
-  subscriptionExchange,
-} from 'urql';
-import { AnyARecord } from 'dns';
+import { Provider, useQuery, useSubscription, Client, dedupExchange, fetchExchange, subscriptionExchange } from 'urql';
 
 const subscriptionClient = new SubscriptionClient('ws://react.eogresources.com/graphql', {
   reconnect: true,
-  connectionParams: {
-    // authToken: getToken(),
-  },
+  connectionParams: {},
 });
 const client = new Client({
   url: 'https://react.eogresources.com/graphql',
@@ -37,7 +22,7 @@ const client = new Client({
     dedupExchange,
     fetchExchange,
     subscriptionExchange({
-      forwardSubscription: operation => subscriptionClient.request(operation),
+      forwardSubscription: (operation) => subscriptionClient.request(operation),
     }),
   ],
 });
@@ -59,10 +44,8 @@ const NEW_METRICS_SUBSCRIPTION = `
 `;
 
 const getMultipleMeasurementsQuery = `
-query{
-    getMultipleMeasurements(input:[{metricName: "flareTemp", after:1600708142403 },{metricName:  "casingPressure", after:1600708142403},
-    {metricName:  "injValveOpen",after:1600708142403}, {metricName:  "oilTemp",after:1600708142403},{metricName:"tubingPressure",after:1600708142403},
-    {metricName:"waterTemp",after:1600708142403}]){
+query ($input: [MeasurementQuery]){
+    getMultipleMeasurements(input: $input){
       metric
       measurements{
         at
@@ -125,12 +108,23 @@ function GetMetrics() {
   return metricses;
 }
 
-function GetMultipleMeasurements() {
+function GetMultipleMeasurements(selectedMetrics: any, timestamp: any) {
+  const input = selectedMetrics.map((metrics: any) => {
+    return {
+      metricName: metrics,
+      after: timestamp,
+    };
+  });
+
   const [result] = useQuery({
     query: getMultipleMeasurementsQuery,
+    variables: {
+      input,
+    },
   });
+
   const { fetching, data, error } = result;
-  // console.log(data);
+  console.log(data);
   // console.log(error);
   const multipleMeasures = !fetching ? data.getMultipleMeasurements : null;
   return multipleMeasures;
@@ -147,6 +141,7 @@ const Dropdown = () => {
   const classes = useStyles();
   const theme = useTheme();
   const [personMetrics, setPersonMetrics] = React.useState<string[]>([]);
+  const timestamp = React.useRef<number>(Date.now() - 1000 * 60 * 30);
 
   const newMeasurements = React.useRef<any>([]);
 
@@ -156,17 +151,15 @@ const Dropdown = () => {
 
   const metricses = GetMetrics();
   const newMeasurement = GetUpdate();
-  const multipleMeasures = GetMultipleMeasurements();
+  const multipleMeasures = GetMultipleMeasurements(personMetrics, timestamp.current);
 
   if (newMeasurement) {
-    // console.log(newMeasurement);
     newMeasurements.current = [
       ...newMeasurements.current.filter((m: any) => {
         return m.metric !== newMeasurement.metric;
       }),
       newMeasurement,
     ];
-    // console.log(newMeasurements.current);
   }
 
   const LineChart = () => {
@@ -174,19 +167,17 @@ const Dropdown = () => {
       ? multipleMeasures
           .filter((measurement: any) => {
             const { metric } = measurement;
-
             return personMetrics.includes(metric);
           })
           .map((measurement: any) => {
             const { metric, measurements } = measurement;
-
             return {
               name: metric,
               data: measurements.map((e: any) => {
                 const { value, at } = e;
                 return { x: at, y: value };
               }),
-              turboThreshold: 5000,
+              turboThreshold: 10000,
             };
           })
       : null;
@@ -221,9 +212,9 @@ const Dropdown = () => {
             value={personMetrics}
             onChange={handleChange}
             input={<Input id="select-multiple-chip" />}
-            renderValue={selected => (
+            renderValue={(selected) => (
               <div className={classes.showTags}>
-                {(selected as string[]).map(value => (
+                {(selected as string[]).map((value) => (
                   <Chip key={value} label={value} className={classes.showTag} />
                 ))}
               </div>
